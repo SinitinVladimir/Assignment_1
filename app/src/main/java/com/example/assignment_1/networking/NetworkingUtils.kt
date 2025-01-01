@@ -9,127 +9,180 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 
-// TCP Server
+// TCP SERVER with Receiver-Side IAT
 suspend fun startTCPServer(port: Int, onMessageReceived: (String, String) -> Unit) {
     withContext(Dispatchers.IO) {
+        val serverSocket = ServerSocket(port)
+        Log.d("TCPServer", "TCP Server started on port $port")
         try {
-            val serverSocket = ServerSocket(port)
-            Log.d("TCPServer", "TCP Server started on port $port")
-            try {
-                while (true) {
-                    val clientSocket = serverSocket.accept()
-                    val clientAddress = clientSocket.inetAddress.hostAddress
+            var prevTime: Long? = null
+            while (true) {
+                val clientSocket = serverSocket.accept()
+                val message = clientSocket.getInputStream().bufferedReader().readLine()
+
+                val currTime = System.currentTimeMillis()
+                if (prevTime != null) {
+                    val iat = (currTime - prevTime) / 1000.0
+                    Log.d("TCPServer", "Receiver-Side IAT (TCP): $iat seconds")
+                } else {
+                    Log.d("TCPServer", "First TCP message received, no IAT to calculate")
+                }
+                prevTime = currTime
+
+                onMessageReceived("TCP", message ?: "NULL")
+                clientSocket.getOutputStream().write("Message received\n".toByteArray())
+                clientSocket.close()
+            }
+        } finally {
+            serverSocket.close()
+        }
+    }
+}
+
+/**
+ * Sends multiple TCP packets to (ip, port).
+ * Now includes sender-side IAT measurement between consecutive packets.
+ */
+suspend fun sendTCPMessage(
+    ip: String,
+    port: Int,
+    message: String,
+    n: Int = 1,
+    delay: Long = 1000
+): String {
+    return withContext(Dispatchers.IO) {
+        var result = "Sent successfully"
+
+        // We'll measure time between consecutive sends
+        var prevSendTime: Long? = null
+
+        try {
+            for (i in 1..n) {
+                // Create and connect a new socket for each packet
+                Socket(ip, port).use { socket ->
+                    val packetMessage = "$message (Packet $i)"
+
+                    val currTime = System.currentTimeMillis()
+                    if (prevSendTime != null) {
+                        val iatMs = currTime - prevSendTime!!
+                        Log.d("TCPClient", "Sender-Side IAT (TCP) between packet ${i-1} and $i: $iatMs ms")
+                    }
+                    prevSendTime = currTime
+
+                    socket.getOutputStream().write("$packetMessage\n".toByteArray())
+                    Log.d("TCPClient", "Sent: $packetMessage to $ip:$port")
+
+                    // (Optional) read a response
+                    socket.soTimeout = 2000
                     try {
-                        val reader = clientSocket.getInputStream().bufferedReader()
-                        val message = reader.readLine()  // Read message
-                        Log.d("TCPServer", "Message received: $message from $clientAddress")
-
-                        onMessageReceived("TCP", "From $clientAddress: $message")
-
-                        // Send response
-                        val response = "Acknowledged: $message"
-                        clientSocket.getOutputStream().write((response + "\n").toByteArray())
+                        val response = socket.getInputStream().bufferedReader().readLine()
+                        if (response != null) {
+                            Log.d("TCPClient", "Server response: $response")
+                        }
                     } catch (e: Exception) {
-                        Log.e("TCPServer", "Error processing message: ${e.message}")
-                    } finally {
-                        clientSocket.close()  // Always close the socket
+                        Log.w("TCPClient", "No immediate response (TCP) for packet $i")
                     }
                 }
-            } finally {
-                serverSocket.close()
+
+                // Delay
+                Thread.sleep(delay)
             }
-        } catch (e: Exception) {
-            Log.e("TCPServer", "Error starting TCP server: ${e.message}")
-            onMessageReceived("TCP", "Error: ${e.message}")
-        }
-    }
-}
-
-
-// TCP Client
-suspend fun sendTCPMessage(ip: String, port: Int, message: String): String {
-    return withContext(Dispatchers.IO) {
-        try {
-            val socket = Socket(ip, port)
-            Log.d("TCPClient", "Connected to TCP server $ip:$port")
-            socket.getOutputStream().write((message + "\n").toByteArray())
-            Log.d("TCPClient", "Message sent: $message")
-
-            val response = socket.getInputStream().bufferedReader().readLine()
-            Log.d("TCPClient", "Response received: $response")
-            socket.close()
-            response
         } catch (e: Exception) {
             Log.e("TCPClient", "Error sending TCP message: ${e.message}")
-            "Error: ${e.message}"
+            result = "Error: ${e.message}"
         }
+
+        result
     }
 }
 
-// UDP Server
+// UDP SERVER with Receiver-Side IAT
 suspend fun startUDPServer(port: Int, onMessageReceived: (String, String) -> Unit) {
     withContext(Dispatchers.IO) {
+        val socket = DatagramSocket(port)
+        Log.d("UDPServer", "UDP Server started on port $port")
+        val buffer = ByteArray(1024)
+        var prevTime: Long? = null
         try {
-            val socket = DatagramSocket(port)
-            Log.d("UDPServer", "UDP Server started on port $port")
-            val buffer = ByteArray(1024)
-            try {
-                while (true) {
-                    val packet = DatagramPacket(buffer, buffer.size)
-                    socket.receive(packet) // Receive packet from client
+            while (true) {
+                val packet = DatagramPacket(buffer, buffer.size)
+                socket.receive(packet)
+                val message = String(packet.data, 0, packet.length)
 
-                    // Extract message details
-                    val message = String(packet.data, 0, packet.length)
-                    val clientAddress = packet.address.hostAddress
-                    val clientPort = packet.port
-
-                    // Log received message
-                    Log.d("UDPServer", "Received message from $clientAddress:$clientPort: $message")
-                    onMessageReceived("UDP", "From $clientAddress:$clientPort: $message")
-
-                    // Prepare and send response
-                    val responseMessage = "Acknowledged: $message"
-                    val response = responseMessage.toByteArray()
-                    val responsePacket = DatagramPacket(response, response.size, packet.address, packet.port)
-                    socket.send(responsePacket)
-
-                    // Log response details
-                    Log.d("UDPServer", "Response sent to $clientAddress:$clientPort: $responseMessage")
+                val currTime = System.currentTimeMillis()
+                if (prevTime != null) {
+                    val iat = (currTime - prevTime!!) / 1000.0
+                    Log.d("UDPServer", "Receiver-Side IAT (UDP): $iat seconds")
+                } else {
+                    Log.d("UDPServer", "First UDP packet received, no IAT to calculate")
                 }
-            } catch (e: Exception) {
-                Log.e("UDPServer", "Error during packet processing: ${e.message}")
-            } finally {
-                socket.close()
-                Log.d("UDPServer", "UDP Server socket closed.")
+                prevTime = currTime
+
+                onMessageReceived("UDP", message)
+
+                val response = "Message received".toByteArray()
+                socket.send(DatagramPacket(response, response.size, packet.address, packet.port))
             }
-        } catch (e: Exception) {
-            Log.e("UDPServer", "Error starting UDP server: ${e.message}")
-            onMessageReceived("UDP", "Error: ${e.message}")
+        } finally {
+            socket.close()
         }
     }
 }
 
-
-// UDP Client
-suspend fun sendUDPMessage(ip: String, port: Int, message: String): String {
+/**
+ * Sends multiple UDP packets to (ip, port).
+ * Now includes sender-side IAT measurement between consecutive packets.
+ */
+suspend fun sendUDPMessage(
+    ip: String,
+    port: Int,
+    message: String,
+    n: Int = 1,
+    delay: Long = 1000
+): String {
     return withContext(Dispatchers.IO) {
-        try {
-            val socket = DatagramSocket()
-            val address = InetAddress.getByName(ip)
-            val packet = DatagramPacket(message.toByteArray(), message.length, address, port)
-            socket.send(packet)
-            Log.d("UDPClient", "Message sent to $ip:$port: $message")
+        val socket = DatagramSocket()
+        var result = "Sent successfully"
 
-            val buffer = ByteArray(1024)
-            val responsePacket = DatagramPacket(buffer, buffer.size)
-            socket.receive(responsePacket)
-            val response = String(responsePacket.data, 0, responsePacket.length)
-            Log.d("UDPClient", "Response received from $ip:$port: $response")
-            socket.close()
-            response
+        // For measuring consecutive send times
+        var prevSendTime: Long? = null
+
+        try {
+            val address = InetAddress.getByName(ip)
+            for (i in 1..n) {
+                val packetMessage = "$message (Packet $i)"
+                val data = packetMessage.toByteArray()
+                val packet = DatagramPacket(data, data.size, address, port)
+
+                val currTime = System.currentTimeMillis()
+                if (prevSendTime != null) {
+                    val iatMs = currTime - prevSendTime!!
+                    Log.d("UDPClient", "Sender-Side IAT (UDP) between packet ${i-1} and $i: $iatMs ms")
+                }
+                prevSendTime = currTime
+
+                socket.send(packet)
+                Log.d("UDPClient", "Sent: $packetMessage to $ip:$port")
+
+                // (Optional) read a response (single read, up to you)
+                socket.soTimeout = 2000
+                try {
+                    val responsePacket = DatagramPacket(ByteArray(1024), 1024)
+                    socket.receive(responsePacket)
+                    val respMsg = String(responsePacket.data, 0, responsePacket.length)
+                    Log.d("UDPClient", "Server response: $respMsg")
+                } catch (e: Exception) {
+                    Log.w("UDPClient", "No immediate response (UDP) for packet $i")
+                }
+
+                Thread.sleep(delay)
+            }
         } catch (e: Exception) {
             Log.e("UDPClient", "Error sending UDP message: ${e.message}")
-            "Error: ${e.message}"
+            result = "Error: ${e.message}"
+        } finally {
+            socket.close()
         }
+        result
     }
 }
