@@ -69,4 +69,8 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // For the HTTP request
+    implementation("com.squareup.okhttp3:okhttp:4.10.0")
+
 }

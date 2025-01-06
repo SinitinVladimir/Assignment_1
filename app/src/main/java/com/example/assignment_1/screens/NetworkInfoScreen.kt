@@ -1,12 +1,15 @@
 package com.example.assignment_1.screens
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.*
+import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
-import android.telephony.TelephonyManager
+import android.os.Build
+import android.telephony.*
 import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -15,20 +18,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.IOException
 import java.util.Locale
 
 @Composable
 fun NetworkInfoScreen() {
     val context = LocalContext.current
 
-    // Normal permissions (no user prompt needed)
+    // Required permissions
     val canAccessNetworkState = checkPermission(context, Manifest.permission.ACCESS_NETWORK_STATE)
     val canAccessWifiState = checkPermission(context, Manifest.permission.ACCESS_WIFI_STATE)
-
-    // Dangerous permissions (prompted in MainActivity)
+    val canChangeWifiState = checkPermission(context, Manifest.permission.CHANGE_WIFI_STATE)
     val canReadPhoneState = checkPermission(context, Manifest.permission.READ_PHONE_STATE)
-    val canAccessFineLocation = checkPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+    val canFineLoc = checkPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+    val canCoarseLoc = checkPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
 
+    // Managers
     val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val wifiManager =
@@ -36,73 +46,150 @@ fun NetworkInfoScreen() {
     val telephonyManager =
         context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
 
-    // Connectivity info
+    // ------------- (1) Connectivity Information -------------
     val (activeNetType, allNetTypes) = remember {
-        if (canAccessNetworkState) getConnectivityInfo(connectivityManager)
-        else "Permission not granted" to emptyList<String>()
+        if (canAccessNetworkState) {
+            getConnectivityInfo(connectivityManager)
+        } else {
+            "Permission not granted" to emptyList<String>()
+        }
     }
 
-    // WiFi info
-    val wifiData = remember {
+    // ------------- 2 Wi-Fi Network -------------
+    // 2.1 ConnectionInfo (deprecated but assignment requires)
+    val wifiInfo = remember {
         if (canAccessWifiState) safeGetWifiInfo(wifiManager) else null
     }
 
-    // Telephony info
+    // 2.2 DhcpInfo (deprecated, no direct replacement)
+    val dhcp = remember {
+        if (canAccessWifiState) {
+            try {
+                @Suppress("DEPRECATION")
+                wifiManager.dhcpInfo // for assignment
+            } catch (e: SecurityException) {
+                Log.e("NetworkInfoScreen", "SecurityException: ${e.message}")
+                null
+            }
+        } else null
+    }
+
+    // 2.3 ConfiguredNetworks
+    val wifiConfiguredNetworks = remember {
+        if (canAccessWifiState || canChangeWifiState) {
+            try {
+                @Suppress("DEPRECATION")
+                wifiManager.configuredNetworks
+            } catch (e: SecurityException) {
+                Log.e("NetworkInfoScreen", "SecurityException: ${e.message}")
+                null
+            }
+        } else null
+    }
+
+    // ------------- 3 Mobile Network -------------
     val telephonyData = remember {
-        if (canReadPhoneState) getTelephonyInfo(telephonyManager, canAccessFineLocation)
-        else TelephonyData(
-            dataState = "Permission not granted",
-            phoneType = "N/A",
-            networkType = "N/A",
-            operatorName = "N/A",
-            simOperatorName = "N/A",
-            cellLocation = "N/A"
-        )
+        if (canReadPhoneState) {
+            getMobileNetworkInfo(telephonyManager, canFineLoc, canCoarseLoc)
+        } else {
+            MobileNetworkData(
+                dataState = "Permission not granted",
+                phoneType = "N/A",
+                networkType = "N/A",
+                cellId = "N/A",
+                lac = "N/A",
+                mcc = "N/A",
+                mnc = "N/A",
+                networkOperatorName = "N/A",
+                simOperatorName = "N/A",
+                latLong = "N/A"
+            )
+        }
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier = Modifier.fillMaxSize().padding(16.dp)
     ) {
         Text("Network Information", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
 
-        Text("ConnectivityManager:")
-        Text(" • Active Network: $activeNetType")
-        Text(" • All Network Types: ${allNetTypes.joinToString()}")
+        Text("1 Connectivity Information")
+        Text(" • Type of Active Network: $activeNetType")
+        Text(" • All Other Networks: ${allNetTypes.joinToString()}")
 
         Spacer(Modifier.height(16.dp))
 
-        Text("WiFiManager:")
-        if (wifiData == null) {
-            Text(" • WiFi info unavailable (permission not granted or WiFi off)")
+        // ===== 2 WiFi =====
+        Text("2 Information of a WiFi Network")
+
+        // 2.1 ConnectionInfo
+        Text("[ConnectionInfo]")
+        if (wifiInfo == null) {
+            Text("   WiFi info unavailable (permission not granted or WiFi off)")
         } else {
-            Text(" • SSID: ${wifiData.ssid}")
-            Text(" • BSSID: ${wifiData.bssid}")
-            Text(" • Link Speed: ${wifiData.linkSpeed} Mbps")
-            Text(" • RSSI (Signal Level): ${wifiData.rssi} dBm")
-            val ip = wifiData.ipAddress
-            Text(" • IP Address: ${formatIpAddress(ip)}")
+            Text("   IpAddress: ${formatIpAddress(wifiInfo.ipAddress)}")
+            Text("   MacAddress: ${wifiInfo.macAddress ?: "N/A"}")
+            Text("   LinkSpeed: ${wifiInfo.linkSpeed} Mbps")
+            Text("   SSID: ${wifiInfo.ssid}")
+            Text("   BSSID: ${wifiInfo.bssid}")
+            Text("   RSSI: ${wifiInfo.rssi} dBm")
+        }
+
+        // 2.2 DhcpInfo
+        Text("[DhcpInfo]")
+        if (dhcp != null) {
+            Text("   IP: ${formatIpAddress(dhcp.ipAddress)}")
+            Text("   Gateway: ${formatIpAddress(dhcp.gateway)}")
+            Text("   Netmask: ${formatIpAddress(dhcp.netmask)}")
+            Text("   DNS1: ${formatIpAddress(dhcp.dns1)}")
+            Text("   DNS2: ${formatIpAddress(dhcp.dns2)}")
+            Text("   ServerAddress: ${formatIpAddress(dhcp.serverAddress)}")
+        } else {
+            Text("   dhcpInfo not available or permission missing.")
+        }
+
+        // 2.3 ConfiguredNetworks
+        Text("[ConfiguredNetworks]")
+        if (wifiConfiguredNetworks == null) {
+            Text("   Configured networks unavailable (permission missing?).")
+        } else if (wifiConfiguredNetworks.isEmpty()) {
+            Text("   No configured networks.")
+        } else {
+            wifiConfiguredNetworks.forEach { cfg ->
+                // WifiConfiguration is deprecated, but it has fields: networkId, SSID, BSSID, priority
+                Text("   networkId: ${cfg.networkId}")
+                Text("   SSID: ${cfg.SSID}")
+                Text("   BSSID: ${cfg.BSSID ?: "N/A"}")
+                Text("   priority: ${cfg.priority}")
+                Spacer(Modifier.height(8.dp))
+            }
         }
 
         Spacer(Modifier.height(16.dp))
 
-        Text("TelephonyManager:")
-        Text(" • Data State: ${telephonyData.dataState}")
-        Text(" • Phone Type: ${telephonyData.phoneType}")
-        Text(" • Network Type: ${telephonyData.networkType}")
-        Text(" • Network Operator Name: ${telephonyData.operatorName}")
-        Text(" • SIM Operator Name: ${telephonyData.simOperatorName}")
-        Text(" • Cell Location: ${telephonyData.cellLocation}")
+        // ===== 3 Mobile Network =====
+        Text("3 Information of a Mobile Network")
+        Text(" • DataState: ${telephonyData.dataState}")
+        Text(" • PhoneType: ${telephonyData.phoneType}")
+        Text(" • NetworkType: ${telephonyData.networkType}")
+        Text(" • CellID: ${telephonyData.cellId}")
+        Text(" • LAC: ${telephonyData.lac}")
+        Text(" • MCC: ${telephonyData.mcc}")
+        Text(" • MNC: ${telephonyData.mnc}")
+        Text(" • NetworkOperatorName: ${telephonyData.networkOperatorName}")
+        Text(" • SimOperatorName: ${telephonyData.simOperatorName}")
+        Text(" • Lat/Long from cell: ${telephonyData.latLong}")
     }
 }
+
+// ---------------------- Helpers ----------------------
 
 @Composable
 private fun checkPermission(context: Context, permission: String): Boolean {
     return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }
 
+// ============ 2.1 Connectivity Info =============
 private fun getConnectivityInfo(
     cm: ConnectivityManager
 ): Pair<String, List<String>> {
@@ -116,8 +203,9 @@ private fun getConnectivityInfo(
         else -> "Unknown"
     }
 
-    val allNetworks = cm.allNetworks.mapNotNull { network ->
-        val caps = cm.getNetworkCapabilities(network) ?: return@mapNotNull null
+    val allNets = cm.allNetworks.mapNotNull { net ->
+        if (net == activeNetwork) return@mapNotNull null
+        val caps = cm.getNetworkCapabilities(net) ?: return@mapNotNull null
         when {
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
             caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
@@ -126,32 +214,59 @@ private fun getConnectivityInfo(
         }
     }
 
-    return activeType to allNetworks
+    return activeType to allNets
 }
 
+// ============ 2 WiFi Info =============
+
+@Suppress("DEPRECATION")
 private fun safeGetWifiInfo(wifiManager: WifiManager): WifiInfo? {
     return try {
         wifiManager.connectionInfo
     } catch (e: SecurityException) {
         Log.e("NetworkInfoScreen", "SecurityException: ${e.message}")
         null
+    } catch (e: Exception) {
+        Log.e("NetworkInfoScreen", "Error reading wifi info: ${e.message}")
+        null
     }
 }
 
-data class TelephonyData(
+private fun formatIpAddress(ip: Int): String {
+    if (ip == 0) return "0.0.0.0"
+    return String.format(
+        Locale.US,
+        "%d.%d.%d.%d",
+        ip and 0xff,
+        ip shr 8 and 0xff,
+        ip shr 16 and 0xff,
+        ip shr 24 and 0xff
+    )
+}
+
+// ============ 2.3 Mobile Network =============
+data class MobileNetworkData(
     val dataState: String,
     val phoneType: String,
     val networkType: String,
-    val operatorName: String,
+    val cellId: String,
+    val lac: String,
+    val mcc: String,
+    val mnc: String,
+    val networkOperatorName: String,
     val simOperatorName: String,
-    val cellLocation: String
+    val latLong: String
 )
 
-private fun getTelephonyInfo(
-    telephonyManager: TelephonyManager,
-    hasLocationPermission: Boolean
-): TelephonyData {
-    val dataStateStr = when (telephonyManager.dataState) {
+
+@SuppressLint("MissingPermission")
+private fun getMobileNetworkInfo(
+    tm: TelephonyManager,
+    hasFineLocation: Boolean,
+    hasCoarseLocation: Boolean
+): MobileNetworkData {
+    // 1) DataState
+    val ds = when (tm.dataState) {
         TelephonyManager.DATA_CONNECTED -> "CONNECTED"
         TelephonyManager.DATA_CONNECTING -> "CONNECTING"
         TelephonyManager.DATA_DISCONNECTED -> "DISCONNECTED"
@@ -159,7 +274,8 @@ private fun getTelephonyInfo(
         else -> "UNKNOWN"
     }
 
-    val phoneTypeStr = when (telephonyManager.phoneType) {
+    // 2) PhoneType
+    val pt = when (tm.phoneType) {
         TelephonyManager.PHONE_TYPE_GSM -> "GSM"
         TelephonyManager.PHONE_TYPE_CDMA -> "CDMA"
         TelephonyManager.PHONE_TYPE_SIP -> "SIP"
@@ -167,7 +283,14 @@ private fun getTelephonyInfo(
         else -> "UNKNOWN"
     }
 
-    val networkTypeStr = when (telephonyManager.networkType) {
+    // 3) networkType => dataNetworkType if available, else fallback to networkType
+    val netTypeCode = try {
+        tm.dataNetworkType
+    } catch (e: Exception) {
+        tm.networkType // fallback
+    }
+
+    val netType = when (netTypeCode) {
         TelephonyManager.NETWORK_TYPE_LTE -> "LTE"
         TelephonyManager.NETWORK_TYPE_NR -> "5G NR"
         TelephonyManager.NETWORK_TYPE_HSPA -> "HSPA"
@@ -181,36 +304,109 @@ private fun getTelephonyInfo(
         else -> "UNKNOWN"
     }
 
-    val operatorName = telephonyManager.networkOperatorName ?: "N/A"
-    val simOperatorName = telephonyManager.simOperatorName ?: "N/A"
+    // 4) Operator info
+    val netOpName = tm.networkOperatorName ?: "N/A"
+    val simOpName = tm.simOperatorName ?: "N/A"
 
-    val cellLocationStr = if (hasLocationPermission) {
-        try {
-            telephonyManager.cellLocation?.toString() ?: "N/A"
+    // 5) allCellInfo
+    var cidStr = "N/A"
+    var lacStr = "N/A"
+    var mccStr = "N/A"
+    var mncStr = "N/A"
+
+    if (hasFineLocation || hasCoarseLocation) {
+        val allCells = try {
+            tm.allCellInfo
         } catch (e: SecurityException) {
-            "Permission denied"
+            emptyList<CellInfo>()
         } catch (e: Exception) {
-            "Error: ${e.message}"
+            emptyList<CellInfo>()
         }
-    } else {
-        "Location permission not granted"
+
+        val gsmCell = allCells?.find { it is CellInfoGsm } as? CellInfoGsm
+        if (gsmCell != null) {
+            val gsmId = gsmCell.cellIdentity
+            // Compare with -1 to see if unknown
+            val c = gsmId.cid
+            if (c != -1) {
+                cidStr = c.toString()
+            }
+            val l = gsmId.lac
+            if (l != -1) {
+                lacStr = l.toString()
+            }
+
+            // Fallback to telephonyManager.networkOperator if missing
+            val netOp = tm.networkOperator ?: ""
+            if (netOp.length >= 3) {
+                mccStr = netOp.substring(0, 3)
+                mncStr = if (netOp.length > 3) netOp.substring(3) else "N/A"
+            }
+        } else {
+            // fallback if no GSM cell found
+            val netOp = tm.networkOperator ?: ""
+            if (netOp.length >= 3) {
+                mccStr = netOp.substring(0, 3)
+                mncStr = if (netOp.length > 3) netOp.substring(3) else "N/A"
+            }
+        }
     }
 
-    return TelephonyData(
-        dataState = dataStateStr,
-        phoneType = phoneTypeStr,
-        networkType = networkTypeStr,
-        operatorName = operatorName,
-        simOperatorName = simOperatorName,
-        cellLocation = cellLocationStr
+    val latLongStr = runBlocking {
+        convertCellIdToLatLong(mccStr, mncStr, cidStr, lacStr)
+    }
+
+    return MobileNetworkData(
+        dataState = ds,
+        phoneType = pt,
+        networkType = netType,
+        cellId = cidStr,
+        lac = lacStr,
+        mcc = mccStr,
+        mnc = mncStr,
+        networkOperatorName = netOpName,
+        simOperatorName = simOpName,
+        latLong = latLongStr
     )
 }
 
-private fun formatIpAddress(ip: Int): String {
-    return String.format(Locale.US, "%d.%d.%d.%d",
-        (ip and 0xff),
-        (ip shr 8 and 0xff),
-        (ip shr 16 and 0xff),
-        (ip shr 24 and 0xff)
-    )
+/**
+ *  cellphonetrackers.org with no API key needed.
+ */
+private suspend fun convertCellIdToLatLong(
+    mcc: String,
+    mnc: String,
+    cid: String,
+    lac: String
+): String {
+    if (mcc == "N/A" || mnc == "N/A" || cid == "N/A" || lac == "N/A") {
+        return "N/A"
+    }
+    val url = "https://cellphonetrackers.org/gsm/gsm-tracker.php?mcc=$mcc&mnc=$mnc&lac=$lac&cid=$cid"
+    val client = OkHttpClient()
+    return withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext "N/A"
+            val body = response.body?.string() ?: return@withContext "N/A"
+
+            val latRegex = """Latitude:</b>\s*([\d\.\-]+)""".toRegex()
+            val lonRegex = """Longitude:</b>\s*([\d\.\-]+)""".toRegex()
+            val lat = latRegex.find(body)?.groupValues?.getOrNull(1)
+            val lon = lonRegex.find(body)?.groupValues?.getOrNull(1)
+
+            if (!lat.isNullOrEmpty() && !lon.isNullOrEmpty()) {
+                "$lat, $lon"
+            } else {
+                "N/A"
+            }
+        } catch (io: IOException) {
+            Log.e("convertCellIdToLatLong", "IOException: ${io.message}")
+            "N/A"
+        } catch (e: Exception) {
+            Log.e("convertCellIdToLatLong", "Error: ${e.message}")
+            "N/A"
+        }
+    }
 }

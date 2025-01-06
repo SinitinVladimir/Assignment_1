@@ -8,8 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
@@ -17,137 +18,98 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.example.assignment_1.screens.ClientScreen
 import com.example.assignment_1.screens.NetworkInfoScreen
 import com.example.assignment_1.screens.ServerScreen
 import com.example.assignment_1.ui.theme.Assignment_1Theme
-import androidx.compose.ui.platform.LocalContext
 
-
+/**
+ * MainActivity launches Compose UI and runtime permission checks
+ */
 class MainActivity : ComponentActivity() {
 
     /**
-     * We’ll request these two “dangerous” permissions at runtime:
-     * - READ_PHONE_STATE (for telephony info)
-     * - ACCESS_FINE_LOCATION (for cell location, Wi-Fi SSID/BSSID, etc.)
-     *
-     * Also note: “INTERNET” is declared in the manifest, but it usually
-     * does NOT need a runtime request. Same for “ACCESS_NETWORK_STATE”
-     * and “ACCESS_WIFI_STATE” (they’re normal permissions).
+     * permissions needed for network and telephony data
      */
     private val dangerousPermissions = arrayOf(
         Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.ACCESS_FINE_LOCATION
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.CHANGE_WIFI_STATE
     )
+
+    private val INTERNET_PERMISSION_CODE = 111
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // 1) Check if Internet permission is declared (usually no runtime prompt needed)
-        if (!isInternetPermissionGranted()) {
-            requestInternetPermission()
-        } else {
-            Toast.makeText(this, "Internet permission already granted", Toast.LENGTH_SHORT).show()
-        }
-
+        checkInternetPermission()
         setContent {
             Assignment_1Theme {
-                // 2) Inside Compose, we’ll do a runtime permission check for dangerous perms
-                PermissionsAndContent()
+                PermissionCheckAndContent(dangerousPermissions)
             }
         }
     }
 
-    /**
-     * A simple check for INTERNET permission – typically not dangerous,
-     * but you had this in your original code. Usually not required at runtime.
-     */
-    private fun isInternetPermissionGranted(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.INTERNET
-        ) == PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun requestInternetPermission() {
-        // For demonstration. Usually “INTERNET” is granted automatically if in manifest.
-        requestPermissions(arrayOf(Manifest.permission.INTERNET), INTERNET_PERMISSION_REQUEST_CODE)
-    }
-
-    companion object {
-        private const val INTERNET_PERMISSION_REQUEST_CODE = 1
+    private fun checkInternetPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.INTERNET), INTERNET_PERMISSION_CODE)
+        } else {
+            Toast.makeText(this, "Internet permission already granted", Toast.LENGTH_SHORT).show()
+        }
     }
 }
 
 /**
- * This composable is launched in setContent().
- * It checks the “dangerous” permissions using the ActivityResult API.
+ * PermissionCheckAndContent requests multiple permissions, then shows main UI
  */
 @Composable
-fun PermissionsAndContent() {
-    val context = LocalContext.current
+fun PermissionCheckAndContent(dangerousPerms: Array<String>) {
+    val ctx = LocalContext.current
 
-    // 1) We'll use rememberLauncherForActivityResult to request multiple perms at once.
-    //    This avoids the deprecated onRequestPermissionsResult approach.
-    val multiplePermissionsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissionsMap ->
-        // This callback is invoked with a map of permission -> granted/denied.
-        // e.g. {READ_PHONE_STATE=true, ACCESS_FINE_LOCATION=false} if user allows phone but denies location
-        if (permissionsMap.values.any { !it }) {
-            // If any permission was denied, show a Toast or handle accordingly
+    // Launcher for multiple permissions
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.any { !it }) {
             Toast.makeText(
-                context,
-                "Some permissions were denied; network info may be incomplete.",
+                ctx,
+                "Some permissions denied. Data may be incomplete.",
                 Toast.LENGTH_LONG
             ).show()
         } else {
-            // All dangerous permissions granted
-            Toast.makeText(
-                context,
-                "All permissions granted! Full network info available.",
-                Toast.LENGTH_SHORT
-            ).show()
+            Toast.makeText(ctx, "All permissions granted.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // 2) Check if they’re already granted
-    val readPhoneStateGranted = ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.READ_PHONE_STATE
-    ) == PackageManager.PERMISSION_GRANTED
+    // Determine which permissions are still needed
+    val needed = remember {
+        dangerousPerms.filter {
+            ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED
+        }
+    }
 
-    val fineLocationGranted = ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED
-
-    // 3) If not all are granted, launch the permission request. You could also do this on a button click.
+    // Launch request if not granted
     LaunchedEffect(Unit) {
-        if (!readPhoneStateGranted || !fineLocationGranted) {
-            multiplePermissionsLauncher.launch(
-                arrayOf(
-                    Manifest.permission.READ_PHONE_STATE,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                )
-            )
+        if (needed.isNotEmpty()) {
+            permLauncher.launch(needed.toTypedArray())
         }
     }
 
-    // 4) Show the actual UI – a scaffold with bottom nav for Client/Server/Network screens
+    // Show app content
     AppContent()
 }
 
 /**
- * Your existing composable, updated to have 3 screens:
- * - 0 -> Client
- * - 1 -> Server
- * - 2 -> Network
+ * AppContent Bottom nav + single scroll container for screens
  */
 @Composable
 fun AppContent() {
-    var selectedScreen by remember { mutableIntStateOf(0) }  // If using Compose 1.5+, or mutableStateOf(0) otherwise
+    var selectedScreen by remember { mutableStateOf(0) }
+    val scrollState = rememberScrollState()
 
     Scaffold(
         bottomBar = {
@@ -156,17 +118,25 @@ fun AppContent() {
                 onItemSelected = { selectedScreen = it }
             )
         }
-    ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+        ) {
             when (selectedScreen) {
                 0 -> ClientScreen()
                 1 -> ServerScreen()
-                2 -> NetworkInfoScreen()  // The new screen
+                2 -> NetworkInfoScreen()
             }
         }
     }
 }
 
+/**
+ * BottomNavigationBar items Client Server Network
+ */
 @Composable
 fun BottomNavigationBar(selectedScreen: Int, onItemSelected: (Int) -> Unit) {
     NavigationBar {
