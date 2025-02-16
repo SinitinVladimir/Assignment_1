@@ -1,115 +1,68 @@
 package com.example.assignment_1
 
-import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.assignment_1.screens.ClientScreen
-import com.example.assignment_1.screens.NetworkInfoScreen
 import com.example.assignment_1.screens.ServerScreen
-import com.example.assignment_1.ui.theme.Assignment_1Theme
+import com.example.assignment_1.theme.Assignment_1Theme
 
-/**
- * MainActivity launches Compose UI and runtime permission checks
- */
 class MainActivity : ComponentActivity() {
-
-    /**
-     * permissions needed for network and telephony data
-     */
-    private val dangerousPermissions = arrayOf(
-        Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.CHANGE_WIFI_STATE
-    )
-
-    private val INTERNET_PERMISSION_CODE = 111
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        checkInternetPermission()
+
+        // Check Internet permission
+        if (!isInternetPermissionGranted()) {
+            requestInternetPermission()
+        } else {
+            Toast.makeText(this, "Internet permission already granted", Toast.LENGTH_SHORT).show()
+        }
+
         setContent {
             Assignment_1Theme {
-                PermissionCheckAndContent(dangerousPermissions)
+                AppContent()
             }
         }
     }
 
-    private fun checkInternetPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.INTERNET), INTERNET_PERMISSION_CODE)
-        } else {
-            Toast.makeText(this, "Internet permission already granted", Toast.LENGTH_SHORT).show()
-        }
+    // Check if the Internet permission is granted
+    private fun isInternetPermissionGranted(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.INTERNET
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    // Request Internet permission
+    private fun requestInternetPermission() {
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(android.Manifest.permission.INTERNET),
+            INTERNET_PERMISSION_REQUEST_CODE
+        )
+    }
+
+    companion object {
+        private const val INTERNET_PERMISSION_REQUEST_CODE = 1
     }
 }
 
-/**
- * PermissionCheckAndContent requests multiple permissions, then shows main UI
- */
-@Composable
-fun PermissionCheckAndContent(dangerousPerms: Array<String>) {
-    val ctx = LocalContext.current
-
-    // Launcher for multiple permissions
-    val permLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        if (results.values.any { !it }) {
-            Toast.makeText(
-                ctx,
-                "Some permissions denied. Data may be incomplete.",
-                Toast.LENGTH_LONG
-            ).show()
-        } else {
-            Toast.makeText(ctx, "All permissions granted.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Determine which permissions are still needed
-    val needed = remember {
-        dangerousPerms.filter {
-            ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    // Launch request if not granted
-    LaunchedEffect(Unit) {
-        if (needed.isNotEmpty()) {
-            permLauncher.launch(needed.toTypedArray())
-        }
-    }
-
-    // Show app content
-    AppContent()
-}
-
-/**
- * AppContent Bottom nav + single scroll container for screens
- */
 @Composable
 fun AppContent() {
-    var selectedScreen by remember { mutableStateOf(0) }
-    val scrollState = rememberScrollState()
+    var selectedScreen by remember { mutableStateOf(0) } // Default to Client screen
 
     Scaffold(
         bottomBar = {
@@ -118,45 +71,30 @@ fun AppContent() {
                 onItemSelected = { selectedScreen = it }
             )
         }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-        ) {
+    ) { innerPadding ->
+        Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedScreen) {
-                0 -> ClientScreen()
-                1 -> ServerScreen()
-                2 -> NetworkInfoScreen()
+                0 -> ClientScreen() // Client screen
+                1 -> ServerScreen() // Server screen
             }
         }
     }
 }
 
-/**
- * BottomNavigationBar items Client Server Network
- */
 @Composable
 fun BottomNavigationBar(selectedScreen: Int, onItemSelected: (Int) -> Unit) {
     NavigationBar {
         NavigationBarItem(
-            selected = (selectedScreen == 0),
+            selected = selectedScreen == 0,
             onClick = { onItemSelected(0) },
             icon = { Icon(Icons.Filled.Send, contentDescription = "Client") },
             label = { Text("Client") }
         )
         NavigationBarItem(
-            selected = (selectedScreen == 1),
+            selected = selectedScreen == 1,
             onClick = { onItemSelected(1) },
             icon = { Icon(Icons.Filled.Cloud, contentDescription = "Server") },
             label = { Text("Server") }
-        )
-        NavigationBarItem(
-            selected = (selectedScreen == 2),
-            onClick = { onItemSelected(2) },
-            icon = { Icon(Icons.Filled.Info, contentDescription = "Network") },
-            label = { Text("Network") }
         )
     }
 }

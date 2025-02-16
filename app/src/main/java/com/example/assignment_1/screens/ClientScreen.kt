@@ -11,130 +11,58 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ClientScreen() {
-    // User inputs
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
     var protocol by remember { mutableStateOf("TCP") }
     var message by remember { mutableStateOf("") }
-    var packets by remember { mutableStateOf("1") }
-    var delayMs by remember { mutableStateOf("1000") }
-
-    // Log text for the UI
     var log by remember { mutableStateOf("Logs:\n") }
-
     val coroutineScope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // IP
-        TextField(
-            value = ip,
-            onValueChange = { ip = it },
-            label = { Text("Enter IP Address") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // Port
-        TextField(
-            value = port,
-            onValueChange = { port = it },
-            label = { Text("Enter Port") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // Message
-        TextField(
-            value = message,
-            onValueChange = { message = it },
-            label = { Text("Enter Message") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // Number of Packets
-        TextField(
-            value = packets,
-            onValueChange = { packets = it },
-            label = { Text("Number of Packets") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // Delay
-        TextField(
-            value = delayMs,
-            onValueChange = { delayMs = it },
-            label = { Text("Delay (ms) Between Packets") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // Protocol Buttons
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        TextField(value = ip, onValueChange = { ip = it }, label = { Text("Enter IP") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(8.dp))
+        TextField(value = port, onValueChange = { port = it }, label = { Text("Enter Port") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(8.dp))
+        TextField(value = message, onValueChange = { message = it }, label = { Text("Enter Message") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(8.dp))
         Row {
             Button(
                 onClick = { protocol = "TCP" },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (protocol == "TCP") MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.secondary
+                    containerColor = if (protocol == "TCP") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                 )
-            ) {
-                Text("TCP")
-            }
-            Spacer(Modifier.width(8.dp))
+            ) { Text("TCP") }
+            Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = { protocol = "UDP" },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (protocol == "UDP") MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.secondary
+                    containerColor = if (protocol == "UDP") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                 )
-            ) {
-                Text("UDP")
-            }
+            ) { Text("UDP") }
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Send Button
+        Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = {
                 coroutineScope.launch {
                     val portNumber = port.toIntOrNull()
-                    if (portNumber == null) {
-                        log += "Invalid port number\n"
-                        return@launch
-                    }
-                    val numPackets = packets.toIntOrNull() ?: 1
-                    val delayMillis = delayMs.toLongOrNull() ?: 1000
-
-                    log += "Sending $numPackets packet(s) via $protocol...\n"
-                    val sendResult = if (protocol == "TCP") {
-                        sendTCPMessage(ip, portNumber, message, numPackets, delayMillis)
+                    if (portNumber != null) {
+                        if (protocol == "TCP") {
+                            val response = sendTCPMessage(ip, portNumber, message)
+                            log += "TCP: Sent: $message | Response: $response\n"
+                        } else {
+                            val response = sendUDPMessage(ip, portNumber, message)
+                            log += "UDP: Sent: $message | Response: $response\n"
+                        }
                     } else {
-                        sendUDPMessage(ip, portNumber, message, numPackets, delayMillis)
+                        log += "Invalid port number\n"
                     }
-                    log += "$sendResult\n"
                 }
             },
             modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Send Message")
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Log display area
+        ) { Text("Send Message") }
+        Spacer(modifier = Modifier.height(16.dp))
         Text(text = log, modifier = Modifier.weight(1f))
     }
 }
