@@ -16,7 +16,7 @@ This project implements a **TCP and UDP** client-server communication system bet
 ## Open the Android project in Android Studio.
 2. Run the Python server:
    ```bash
-  python cli_02.py
+   python cli_02.py
 ## Configure the app to connect to the correct IP address.
 3. Testing
  Use Wireshark for analyzing network packets.
