@@ -1,9 +1,13 @@
 package com.example.assignment_1.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.assignment_1.networking.sendTCPMessage
 import com.example.assignment_1.networking.sendUDPMessage
@@ -134,7 +138,22 @@ fun ClientScreen() {
 
         Spacer(Modifier.height(16.dp))
 
-        // Log display area
-        Text(text = log, modifier = Modifier.weight(1f))
+        // Log display with LazyColumn
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color.Black)
+                .padding(8.dp)
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+            ) {
+                items(log.lines()) { line ->
+                    Text(text = line, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }

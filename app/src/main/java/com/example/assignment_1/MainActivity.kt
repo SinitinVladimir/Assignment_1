@@ -9,8 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
@@ -23,7 +21,7 @@ import androidx.core.content.ContextCompat
 import com.example.assignment_1.screens.ClientScreen
 import com.example.assignment_1.screens.NetworkInfoScreen
 import com.example.assignment_1.screens.ServerScreen
-import com.example.assignment_1.ui.theme.Assignment_1Theme
+import com.example.assignment_1.theme.Assignment_1Theme
 
 /**
  * MainActivity launches Compose UI and runtime permission checks
@@ -31,7 +29,7 @@ import com.example.assignment_1.ui.theme.Assignment_1Theme
 class MainActivity : ComponentActivity() {
 
     /**
-     * permissions needed for network and telephony data
+     * Permissions needed for network and telephony data
      */
     private val dangerousPermissions = arrayOf(
         Manifest.permission.READ_PHONE_STATE,
@@ -104,12 +102,11 @@ fun PermissionCheckAndContent(dangerousPerms: Array<String>) {
 }
 
 /**
- * AppContent Bottom nav + single scroll container for screens
+ * AppContent Bottom nav + single container for screens without scroll
  */
 @Composable
 fun AppContent() {
     var selectedScreen by remember { mutableStateOf(0) }
-    val scrollState = rememberScrollState()
 
     Scaffold(
         bottomBar = {
@@ -123,7 +120,6 @@ fun AppContent() {
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize()
-                .verticalScroll(scrollState)
         ) {
             when (selectedScreen) {
                 0 -> ClientScreen()
@@ -135,7 +131,7 @@ fun AppContent() {
 }
 
 /**
- * BottomNavigationBar items Client Server Network
+ * BottomNavigationBar items: Client, Server, Network
  */
 @Composable
 fun BottomNavigationBar(selectedScreen: Int, onItemSelected: (Int) -> Unit) {

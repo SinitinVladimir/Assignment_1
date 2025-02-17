@@ -11,15 +11,18 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.telephony.*
 import android.util.Log
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -88,11 +91,34 @@ fun NetworkInfoScreen() {
     }
 
     // ------------- 3 Mobile Network -------------
-    val telephonyData = remember {
-        if (canReadPhoneState) {
-            getMobileNetworkInfo(telephonyManager, canFineLoc, canCoarseLoc)
-        } else {
+    // Initialize with default data
+    var telephonyData by remember {
+        mutableStateOf(
             MobileNetworkData(
+                dataState = "Loading...",
+                phoneType = "Loading...",
+                networkType = "Loading...",
+                cellId = "Loading...",
+                lac = "Loading...",
+                mcc = "Loading...",
+                mnc = "Loading...",
+                networkOperatorName = "Loading...",
+                simOperatorName = "Loading...",
+                latLong = "Loading..."
+            )
+        )
+    }
+
+    // Fetch mobile network info asynchronously
+    LaunchedEffect(key1 = Unit) {
+        if (canReadPhoneState) {
+            telephonyData = getMobileNetworkInfo(
+                telephonyManager,
+                canFineLoc,
+                canCoarseLoc
+            )
+        } else {
+            telephonyData = MobileNetworkData(
                 dataState = "Permission not granted",
                 phoneType = "N/A",
                 networkType = "N/A",
@@ -107,78 +133,88 @@ fun NetworkInfoScreen() {
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
+    // Use LazyColumn to make the entire content scrollable
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
     ) {
-        Text("Network Information", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(16.dp))
-
-        Text("1 Connectivity Information")
-        Text(" • Type of Active Network: $activeNetType")
-        Text(" • All Other Networks: ${allNetTypes.joinToString()}")
-
-        Spacer(Modifier.height(16.dp))
-
-        // ===== 2 WiFi =====
-        Text("2 Information of a WiFi Network")
-
-        // 2.1 ConnectionInfo
-        Text("[ConnectionInfo]")
-        if (wifiInfo == null) {
-            Text("   WiFi info unavailable (permission not granted or WiFi off)")
-        } else {
-            Text("   IpAddress: ${formatIpAddress(wifiInfo.ipAddress)}")
-            Text("   MacAddress: ${wifiInfo.macAddress ?: "N/A"}")
-            Text("   LinkSpeed: ${wifiInfo.linkSpeed} Mbps")
-            Text("   SSID: ${wifiInfo.ssid}")
-            Text("   BSSID: ${wifiInfo.bssid}")
-            Text("   RSSI: ${wifiInfo.rssi} dBm")
+        item {
+            Text("Network Information", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(16.dp))
         }
 
-        // 2.2 DhcpInfo
-        Text("[DhcpInfo]")
-        if (dhcp != null) {
-            Text("   IP: ${formatIpAddress(dhcp.ipAddress)}")
-            Text("   Gateway: ${formatIpAddress(dhcp.gateway)}")
-            Text("   Netmask: ${formatIpAddress(dhcp.netmask)}")
-            Text("   DNS1: ${formatIpAddress(dhcp.dns1)}")
-            Text("   DNS2: ${formatIpAddress(dhcp.dns2)}")
-            Text("   ServerAddress: ${formatIpAddress(dhcp.serverAddress)}")
-        } else {
-            Text("   dhcpInfo not available or permission missing.")
+        item {
+            Text("1. Connectivity Information")
+            Text(" • Type of Active Network: $activeNetType")
+            Text(" • All Other Networks: ${allNetTypes.joinToString()}")
+            Spacer(Modifier.height(16.dp))
         }
 
-        // 2.3 ConfiguredNetworks
-        Text("[ConfiguredNetworks]")
-        if (wifiConfiguredNetworks == null) {
-            Text("   Configured networks unavailable (permission missing?).")
-        } else if (wifiConfiguredNetworks.isEmpty()) {
-            Text("   No configured networks.")
-        } else {
-            wifiConfiguredNetworks.forEach { cfg ->
-                // WifiConfiguration is deprecated, but it has fields: networkId, SSID, BSSID, priority
-                Text("   networkId: ${cfg.networkId}")
-                Text("   SSID: ${cfg.SSID}")
-                Text("   BSSID: ${cfg.BSSID ?: "N/A"}")
-                Text("   priority: ${cfg.priority}")
-                Spacer(Modifier.height(8.dp))
+        item {
+            // ===== 2 WiFi =====
+            Text("2. Information of a WiFi Network")
+
+            // 2.1 ConnectionInfo
+            Text("[ConnectionInfo]", style = MaterialTheme.typography.titleSmall)
+            if (wifiInfo == null) {
+                Text("   WiFi info unavailable (permission not granted or WiFi off)")
+            } else {
+                Text("   IP Address: ${formatIpAddress(wifiInfo.ipAddress)}")
+                Text("   MAC Address: ${wifiInfo.macAddress ?: "N/A"}")
+                Text("   Link Speed: ${wifiInfo.linkSpeed} Mbps")
+                Text("   SSID: ${wifiInfo.ssid}")
+                Text("   BSSID: ${wifiInfo.bssid}")
+                Text("   RSSI: ${wifiInfo.rssi} dBm")
             }
+
+            // 2.2 DhcpInfo
+            Text("[DhcpInfo]", style = MaterialTheme.typography.titleSmall)
+            if (dhcp != null) {
+                Text("   IP: ${formatIpAddress(dhcp.ipAddress)}")
+                Text("   Gateway: ${formatIpAddress(dhcp.gateway)}")
+                Text("   Netmask: ${formatIpAddress(dhcp.netmask)}")
+                Text("   DNS1: ${formatIpAddress(dhcp.dns1)}")
+                Text("   DNS2: ${formatIpAddress(dhcp.dns2)}")
+                Text("   Server Address: ${formatIpAddress(dhcp.serverAddress)}")
+            } else {
+                Text("   DhcpInfo not available or permission missing.")
+            }
+
+            // 2.3 ConfiguredNetworks
+            Text("[ConfiguredNetworks]", style = MaterialTheme.typography.titleSmall)
+            if (wifiConfiguredNetworks == null) {
+                Text("   Configured networks unavailable (permission missing?).")
+            } else if (wifiConfiguredNetworks.isEmpty()) {
+                Text("   No configured networks.")
+            } else {
+                wifiConfiguredNetworks.forEach { cfg ->
+                    // WifiConfiguration is deprecated, but it has fields: networkId, SSID, BSSID, priority
+                    Text("   Network ID: ${cfg.networkId}")
+                    Text("   SSID: ${cfg.SSID}")
+                    Text("   BSSID: ${cfg.BSSID ?: "N/A"}")
+                    Text("   Priority: ${cfg.priority}")
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // ===== 3 Mobile Network =====
-        Text("3 Information of a Mobile Network")
-        Text(" • DataState: ${telephonyData.dataState}")
-        Text(" • PhoneType: ${telephonyData.phoneType}")
-        Text(" • NetworkType: ${telephonyData.networkType}")
-        Text(" • CellID: ${telephonyData.cellId}")
-        Text(" • LAC: ${telephonyData.lac}")
-        Text(" • MCC: ${telephonyData.mcc}")
-        Text(" • MNC: ${telephonyData.mnc}")
-        Text(" • NetworkOperatorName: ${telephonyData.networkOperatorName}")
-        Text(" • SimOperatorName: ${telephonyData.simOperatorName}")
-        Text(" • Lat/Long from cell: ${telephonyData.latLong}")
+        item {
+            // ===== 3 Mobile Network =====
+            Text("3. Information of a Mobile Network")
+            Text(" • DataState: ${telephonyData.dataState}")
+            Text(" • PhoneType: ${telephonyData.phoneType}")
+            Text(" • NetworkType: ${telephonyData.networkType}")
+            Text(" • CellID: ${telephonyData.cellId}")
+            Text(" • LAC: ${telephonyData.lac}")
+            Text(" • MCC: ${telephonyData.mcc}")
+            Text(" • MNC: ${telephonyData.mnc}")
+            Text(" • NetworkOperatorName: ${telephonyData.networkOperatorName}")
+            Text(" • SimOperatorName: ${telephonyData.simOperatorName}")
+            Text(" • Lat/Long from cell: ${telephonyData.latLong}")
+        }
     }
 }
 
@@ -189,7 +225,7 @@ private fun checkPermission(context: Context, permission: String): Boolean {
     return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }
 
-// ============ 2.1 Connectivity Info =============
+// ============ 1. Connectivity Info =============
 private fun getConnectivityInfo(
     cm: ConnectivityManager
 ): Pair<String, List<String>> {
@@ -244,7 +280,7 @@ private fun formatIpAddress(ip: Int): String {
     )
 }
 
-// ============ 2.3 Mobile Network =============
+/// ============ 3 Mobile Network =============
 data class MobileNetworkData(
     val dataState: String,
     val phoneType: String,
@@ -258,9 +294,8 @@ data class MobileNetworkData(
     val latLong: String
 )
 
-
 @SuppressLint("MissingPermission")
-private fun getMobileNetworkInfo(
+private suspend fun getMobileNetworkInfo(
     tm: TelephonyManager,
     hasFineLocation: Boolean,
     hasCoarseLocation: Boolean
@@ -352,9 +387,7 @@ private fun getMobileNetworkInfo(
         }
     }
 
-    val latLongStr = runBlocking {
-        convertCellIdToLatLong(mccStr, mncStr, cidStr, lacStr)
-    }
+    val latLongStr = convertCellIdToLatLong(mccStr, mncStr, cidStr, lacStr)
 
     return MobileNetworkData(
         dataState = ds,
@@ -371,7 +404,7 @@ private fun getMobileNetworkInfo(
 }
 
 /**
- *  cellphonetrackers.org with no API key needed.
+ * cellphonetrackers.org with no API key needed.
  */
 private suspend fun convertCellIdToLatLong(
     mcc: String,

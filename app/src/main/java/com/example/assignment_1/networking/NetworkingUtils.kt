@@ -40,8 +40,8 @@ suspend fun startTCPServer(port: Int, onMessageReceived: (String, String) -> Uni
 }
 
 /**
- * Sends multiple TCP packets to (ip, port).
- * Now includes sender-side IAT measurement between consecutive packets.
+ * Sends multiple TCP packets to (ip, port)
+ * sender-side IAT between packets.
  */
 suspend fun sendTCPMessage(
     ip: String,
@@ -130,8 +130,8 @@ suspend fun startUDPServer(port: Int, onMessageReceived: (String, String) -> Uni
 }
 
 /**
- * Sends multiple UDP packets to (ip, port).
- * Now includes sender-side IAT measurement between consecutive packets.
+ * Sends multiple UDP packets to (ip, port)
+ * sender-side IAT between packets.
  */
 suspend fun sendUDPMessage(
     ip: String,
@@ -164,7 +164,6 @@ suspend fun sendUDPMessage(
                 socket.send(packet)
                 Log.d("UDPClient", "Sent: $packetMessage to $ip:$port")
 
-                // (Optional) read a response (single read, up to you)
                 socket.soTimeout = 2000
                 try {
                     val responsePacket = DatagramPacket(ByteArray(1024), 1024)
